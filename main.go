@@ -126,6 +126,8 @@ func banchoHandler(c *irc.Client, m *irc.Message, out <-chan string) {
 		c.Write("JOIN " + Config.BanchoUser)
 		log.Println("Connected to Bancho")
 		go sendSongReq(c, out)
+	} else if m.Command == "PING" {
+		c.Write("PONG")
 	}
 }
 
