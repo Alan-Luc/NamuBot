@@ -59,27 +59,27 @@ func httpClient() *http.Client {
 	return client
 }
 
-func httpRequest(client *http.Client, method string, url string) []byte {
+func httpRequest(client *http.Client, method string, url string) ([]byte, error) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		log.Println(err)
-		return nil
+		return nil, err
 	}
 
 	res, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
-		return nil
+		return nil, err
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
-		return nil
+		return nil, err
 	}
 
-	return body
+	return body, nil
 }
 
 func sendSongReq(c *irc.Client, out <-chan string) {
@@ -88,7 +88,8 @@ func sendSongReq(c *irc.Client, out <-chan string) {
 		c.WriteMessage(&irc.Message{
 			Command: "PRIVMSG",
 			Params: []string{
-				Config.BanchoUser,
+				// Config.BanchoUser,
+				"ananabnosna",
 				msg,
 			},
 		})
@@ -123,7 +124,8 @@ func bancho(out <-chan string) {
 
 func banchoHandler(c *irc.Client, m *irc.Message, out <-chan string) {
 	if m.Command == "001" {
-		c.Write("JOIN " + Config.BanchoUser)
+		// c.Write("JOIN " + Config.BanchoUser)
+		c.Write("JOIN ananabnosna")
 		log.Println("Connected to Bancho")
 		go sendSongReq(c, out)
 	} else if m.Command == "PING" {
@@ -146,6 +148,14 @@ func discord(out chan<- string) {
 		if err != nil {
 			log.Fatal("Failed to connect to Discord,", err)
 		}
+	}
+}
+
+func discordErrMsg(channel, errMsg string, s *discordgo.Session) {
+	_, err := s.ChannelMessageSend(channel, errMsg)
+	if err != nil {
+		log.Println("Something went wrong sending the error message,", err)
+		return
 	}
 }
 
@@ -195,6 +205,7 @@ func discordHandler(s *discordgo.Session, m *discordgo.MessageCreate, out chan<-
 	}
 
 	message := m.Content
+	errMsg := fmt.Sprintf("<@%s> you may have requested with an invalid link!", m.Author.ID)
 
 	// ty monko
 	urlRegex := regexp.MustCompile(`https:\S+`)
@@ -223,15 +234,22 @@ func discordHandler(s *discordgo.Session, m *discordgo.MessageCreate, out chan<-
 
 				url := ApiBaseUrl + "get_beatmaps?k=" + Config.OsuApiKey + "&b=" + beatmapId
 				c := httpClient()
-				res := httpRequest(c, "GET", url)
+				res, err := httpRequest(c, "GET", url)
+				if err != nil {
+					log.Println("something went wrong with fetch,", err)
+					discordErrMsg(m.ChannelID, errMsg, s)
+					return
+				}
+
 				var data ApiData
 
 				if err := json.Unmarshal(res, &data); err != nil {
 					log.Println(err.Error())
 					return
 				}
-				if len(data) < 0 {
+				if len(data) < 1 {
 					log.Println("something went wrong with fetch")
+					discordErrMsg(m.ChannelID, errMsg, s)
 					return
 				}
 				song := data[0]
@@ -250,7 +268,13 @@ func discordHandler(s *discordgo.Session, m *discordgo.MessageCreate, out chan<-
 				}
 
 				url = "https://osu.ppy.sh/osu/" + song.BeatmapID
-				res = httpRequest(c, "GET", url)
+				res, err = httpRequest(c, "GET", url)
+				if err != nil {
+					log.Println("something went wrong with fetch,", err)
+					discordErrMsg(m.ChannelID, errMsg, s)
+					return
+				}
+
 				beatmap := oppai.Parse(bytes.NewReader(res))
 				ppInfo := oppai.PPInfo(beatmap, &params)
 				starRating, _ := strconv.ParseFloat(song.Difficultyrating, 64)
@@ -275,19 +299,19 @@ func discordHandler(s *discordgo.Session, m *discordgo.MessageCreate, out chan<-
 				beatmapLink := fmt.Sprintf("[https://osu.ppy.sh/b/%s %s] %s|", song.BeatmapID, songInfo, modstring)
 				beatmapInfo := fmt.Sprintf("length: %v | sr: %v* | (%v)", formattedLength, formattedSR, formattedPP)
 				mapMessage := fmt.Sprintf("%s >>> %s %s", m.Author.Username, beatmapLink, beatmapInfo)
-				discMessage := fmt.Sprintf("<@%s>  >>> %s \n%s", m.Author.ID, songInfo, beatmapInfo)
+				discMessage := fmt.Sprintf("<@%s>  >>> %s %s\n%s", m.Author.ID, songInfo, modstring, beatmapInfo)
 
 				log.Println(mapMessage)
 				out <- mapMessage
 
-				_, err := s.ChannelMessageSend(m.ChannelID, discMessage)
+				_, err = s.ChannelMessageSend(m.ChannelID, discMessage)
 				if err != nil {
 					log.Println(err)
 					return
 				}
 			}
 		} else {
-			fmt.Printf("%s requested with an invalid link", m.Author.Username)
+			log.Printf("%s requested with an invalid link", m.Author.Username)
 			return
 		}
 	}
