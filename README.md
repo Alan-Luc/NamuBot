@@ -2,7 +2,7 @@
 
 A Discord clone of [Monko2k](https://github.com/Monko2k)'s [FakerBot](https://github.com/Monko2k/FakerBot)
 
-<img width="400" src="https://raw.githubusercontent.com/Alan-Luc/NamuBot/main/.github/images/namu.png">
+<img width="300" src="https://raw.githubusercontent.com/Alan-Luc/NamuBot/main/.github/images/namu.png">
 
 
 ## Features
